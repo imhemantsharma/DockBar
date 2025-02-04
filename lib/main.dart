@@ -16,6 +16,7 @@ class DockApp extends StatelessWidget {
         backgroundColor: Colors.white,
         body: Center(
           child: Container(
+            height: 75,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
               color: Colors.black12,
@@ -30,26 +31,36 @@ class DockApp extends StatelessWidget {
 }
 
 class DockController extends GetxController {
-  var dockItems = <IconData>[Icons.person, Icons.message, Icons.call, Icons.camera, Icons.photo].obs;
-  var draggingIndex = RxnInt();
-  var placeholderIndex = RxnInt();
-  var hoveredIndex = RxnInt();
+  final RxList<IconData> dockItems = <IconData>[
+    Icons.person,
+    Icons.message,
+    Icons.call,
+    Icons.camera,
+    Icons.photo
+  ].obs;
 
-  void setDraggingIndex(int? index) {
-    draggingIndex.value = index;
-  }
+  final RxnInt draggingIndex = RxnInt();
+  final RxnInt placeholderIndex = RxnInt();
+  final RxnInt hoveredIndex = RxnInt();
 
-  void setPlaceholderIndex(int? index) {
-    placeholderIndex.value = index;
-  }
-
-  void setHoveredIndex(int? index) {
-    hoveredIndex.value = index;
-  }
+  void setDraggingIndex(int? index) => draggingIndex.value = index;
+  void setPlaceholderIndex(int? index) => placeholderIndex.value = index;
+  void setHoveredIndex(int? index) => hoveredIndex.value = index;
 
   void updateDockItems(int draggedIndex, int targetIndex, IconData data) {
+    if (draggedIndex < 0 ||
+        draggedIndex >= dockItems.length ||
+        targetIndex < 0 ||
+        targetIndex > dockItems.length) return;
+
     dockItems.removeAt(draggedIndex);
     dockItems.insert(targetIndex, data);
+  }
+
+  void resetDragState() {
+    setDraggingIndex(null);
+    setPlaceholderIndex(null);
+    setHoveredIndex(null);
   }
 }
 
@@ -58,7 +69,7 @@ class Dock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = Get.put(DockController());
+    final DockController controller = Get.put(DockController());
 
     return SizedBox(
       height: 100,
@@ -67,7 +78,8 @@ class Dock extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           for (int index = 0; index < controller.dockItems.length; index++) ...[
-            if (controller.draggingIndex.value != null && controller.placeholderIndex.value == index)
+            if (controller.draggingIndex.value != null &&
+                controller.placeholderIndex.value == index)
               _buildPlaceholderWidget(index, controller),
             if (controller.draggingIndex.value != index)
               _buildDraggableDockButton(index, controller),
@@ -78,7 +90,8 @@ class Dock extends StatelessWidget {
   }
 
   Widget _buildDraggableDockButton(int index, DockController controller) {
-    IconData icon = controller.dockItems[index];
+    final IconData icon = controller.dockItems[index];
+
     return MouseRegion(
       onEnter: (_) => controller.setHoveredIndex(index),
       onExit: (_) => controller.setHoveredIndex(null),
@@ -96,33 +109,27 @@ class Dock extends StatelessWidget {
           controller.setDraggingIndex(index);
           controller.setPlaceholderIndex(index);
         },
-        onDragCompleted: () {
-          controller.setDraggingIndex(null);
-          controller.setPlaceholderIndex(null);
-          controller.setHoveredIndex(null);
-        },
-        onDraggableCanceled: (_, __) {
-          controller.setDraggingIndex(null);
-          controller.setPlaceholderIndex(null);
-          controller.setHoveredIndex(null);
-        },
+        onDragCompleted: () => controller.resetDragState(),
+        onDraggableCanceled: (_, __) => controller.resetDragState(),
         child: DragTarget<IconData>(
           onWillAcceptWithDetails: (details) {
             controller.setPlaceholderIndex(index);
             return true;
           },
           onAcceptWithDetails: (details) {
-            final draggedIndex = controller.dockItems.indexOf(details.data);
+            final int draggedIndex = controller.dockItems.indexOf(details.data);
             int targetIndex = index;
             if (draggedIndex < index) targetIndex -= 1;
 
             controller.updateDockItems(draggedIndex, targetIndex, details.data);
-            controller.setDraggingIndex(null);
-            controller.setPlaceholderIndex(null);
-            controller.setHoveredIndex(null);
+            controller.resetDragState();
           },
           builder: (context, candidateData, rejectedData) {
-            return _buildButton(icon, hovered: index == controller.hoveredIndex.value, controller: controller);
+            return _buildButton(
+              icon,
+              hovered: index == controller.hoveredIndex.value,
+              controller: controller,
+            );
           },
         ),
       ),
@@ -137,15 +144,13 @@ class Dock extends StatelessWidget {
       },
       onAcceptWithDetails: (details) {
         if (controller.placeholderIndex.value != null) {
-          final draggedIndex = controller.dockItems.indexOf(details.data);
+          final int draggedIndex = controller.dockItems.indexOf(details.data);
           int targetIndex = controller.placeholderIndex.value!;
           if (draggedIndex < targetIndex) targetIndex -= 1;
 
           controller.updateDockItems(draggedIndex, targetIndex, details.data);
         }
-        controller.setDraggingIndex(null);
-        controller.setPlaceholderIndex(null);
-        controller.setHoveredIndex(null);
+        controller.resetDragState();
       },
       builder: (context, candidateData, rejectedData) {
         return _buildPlaceholder(hovered: candidateData.isNotEmpty);
@@ -165,36 +170,57 @@ class Dock extends StatelessWidget {
     );
   }
 
-  Widget _buildButton(IconData icon, {required bool hovered, required DockController controller}) {
-    double scale = 1.0;
+  Widget _buildButton(IconData icon,
+      {required bool hovered, required DockController controller}) {
+    final int index = controller.dockItems.indexOf(icon);
+    const double buttonSize = 55;
+    const double iconScaleSize = 26;
 
+    double scale = 1.0;
     if (controller.hoveredIndex.value != null) {
+      final int distance = (controller.hoveredIndex.value! - index).abs();
       if (hovered) {
-        scale = 1.2;
-      } else {
-        int distance = (controller.hoveredIndex.value! - controller.dockItems.indexOf(icon)).abs();
-        scale = distance == 1 ? 1.1 : 1.0;
+        scale = 1.3;
+      } else if (distance == 1) {
+        scale = 1.1;
       }
     }
 
-    Color boxColor = Colors.primaries[icon.hashCode % Colors.primaries.length];
+    final double translateY = (1.3 - scale) * 12;
+    final Color boxColor =
+    Colors.primaries[icon.hashCode % Colors.primaries.length];
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      margin: const EdgeInsets.symmetric(horizontal: 8),
-      width: 60 * scale,
-      height: 60 * scale,
-      decoration: BoxDecoration(
-        color: boxColor,
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Center(
-        child: Icon(
-          icon,
-          color: Colors.white,
-          size: 28 * scale,
-        ),
-      ),
+    return TweenAnimationBuilder<double>(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      tween: Tween<double>(begin: 1.0, end: scale),
+      builder: (context, animatedScale, child) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Transform.translate(
+            offset: Offset(0, translateY),
+            child: Transform.scale(
+              scale: animatedScale,
+              alignment: Alignment.bottomCenter,
+              child: Container(
+                width: buttonSize,
+                height: buttonSize,
+                decoration: BoxDecoration(
+                  color: boxColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Icon(
+                    icon,
+                    color: Colors.white,
+                    size: iconScaleSize * scale,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
